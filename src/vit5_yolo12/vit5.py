@@ -98,9 +98,13 @@ class Attention(nn.Module):
         q = torch.cat((q[:, :1], self.rope(q[:, 1:reg_start]), self.rope_reg(q[:, reg_start:])), dim=1)
         k = torch.cat((k[:, :1], self.rope(k[:, 1:reg_start]), self.rope_reg(k[:, reg_start:])), dim=1)
         q, k, v = (tensor.transpose(1, 2) for tensor in (q, k, v))
-        attention = ((q * self.scale) @ k.transpose(-2, -1)).softmax(dim=-1)
-        attention = self.attn_drop(attention)
-        output = (attention @ v).transpose(1, 2).reshape(batch, count, dim)
+        output = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            dropout_p=self.attn_drop.p if self.training else 0.0,
+            scale=self.scale,
+        ).transpose(1, 2).reshape(batch, count, dim)
         return self.proj_drop(self.proj(output))
 
 

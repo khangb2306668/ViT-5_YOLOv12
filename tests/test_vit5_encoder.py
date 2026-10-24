@@ -1,8 +1,11 @@
 """Behavior and checkpoint-shape checks for the spatial ViT-5-Small encoder."""
 
+import math
+
 import pytest
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 from vit5_yolo12.vit5 import ViT5SpatialEncoder
 
@@ -93,6 +96,40 @@ def test_rope_uses_pretraining_coordinate_bases() -> None:
     attention = model.blocks[0].attn
     assert attention.rope.pt_seq_len == 14
     assert attention.rope_reg.pt_seq_len == 2
+
+
+def test_patch_and_register_rope_rotate_on_separate_scaled_grids() -> None:
+    attention = ViT5SpatialEncoder(depth=1).blocks[0].attn
+    patch_vectors = torch.zeros(1, 40 * 40, 1, 64)
+    patch_vectors[..., 0] = 1
+    patch_rotated = attention.rope(patch_vectors)
+    register_vectors = torch.zeros(1, 4, 1, 64)
+    register_vectors[..., 0] = 1
+    register_rotated = attention.rope_reg(register_vectors)
+
+    assert patch_rotated[0, 0, 0, 0] == pytest.approx(1.0)
+    assert patch_rotated[0, 40, 0, 0] == pytest.approx(math.cos(14 / 40), abs=1e-6)
+    assert patch_rotated[0, 40, 0, 1] == pytest.approx(math.sin(14 / 40), abs=1e-6)
+    assert register_rotated[0, 2, 0, 0] == pytest.approx(math.cos(1), abs=1e-6)
+    assert register_rotated[0, 2, 0, 1] == pytest.approx(math.sin(1), abs=1e-6)
+
+
+def test_attention_uses_scaled_dot_product_kernel(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = F.scaled_dot_product_attention
+    calls = []
+
+    def checked_attention(query, key, value, **kwargs):
+        calls.append(kwargs)
+        return original(query, key, value, **kwargs)
+
+    monkeypatch.setattr(F, "scaled_dot_product_attention", checked_attention)
+    model = ViT5SpatialEncoder(depth=1).eval()
+
+    with torch.inference_mode():
+        model(torch.randn(1, 3, 32, 32))
+
+    assert len(calls) == 1
+    assert calls[0]["dropout_p"] == 0.0
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable locally")
