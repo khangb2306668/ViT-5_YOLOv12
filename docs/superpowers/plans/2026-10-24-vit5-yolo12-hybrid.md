@@ -81,7 +81,7 @@
 **Interfaces:** `ViT5HybridBackbone.forward(x: torch.Tensor) -> list[torch.Tensor]` returns `[P3,P4,P5]`. `load_vit5_checkpoint(backbone: ViT5HybridBackbone, path: Path) -> LoadReport` loads only `backbone.vit5`, returning loaded/skipped/unexpected key lists. P3 uses YOLO12n layers 0–4 topology at scale `n`; P4 is `Conv(384,128,k=1,s=1)`; P5 is `Conv(128,256,k=3,s=2)`.
 
 - [ ] **Step 1: Write failing backbone tests.** Assert 640-input shapes `[B,128,80,80]`, `[B,128,40,40]`, `[B,256,20,20]`; assert P4/P5 gradients reach ViT and P3 gradients reach the CNN branch.
-- [ ] **Step 2: Write failing loader tests.** With an upstream-shaped fixture, assert classifier keys are intentionally skipped, 14×14 APE becomes 40×40 at 640, a sentinel block weight is loaded unchanged, and an unrelated shape mismatch raises an error.
+- [ ] **Step 2: Write failing loader tests.** With an upstream-shaped fixture, assert classifier keys are intentionally skipped, the 14×14 APE parameter loads unchanged and produces 40×40 positions at 640 during forward, a sentinel block weight is loaded unchanged, and an unrelated shape mismatch raises an error.
 - [ ] **Step 3: Run `python -m pytest tests/test_hybrid_backbone.py tests/test_checkpoint.py -q`.** Expect failure before implementation.
 - [ ] **Step 4: Implement the backbone and strict loader.** Match the actual official checkpoint's `model`/`state_dict` envelope, prefix, and EMA choice after inspecting its metadata; record these in `LoadReport` and refuse a nearly empty load.
 - [ ] **Step 5: Rerun both test files; then run a real checkpoint load when the file is available.** Expect all assertions to pass and no unaccounted missing keys.
