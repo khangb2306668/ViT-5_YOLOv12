@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 import pickle
@@ -101,7 +102,24 @@ def load_vit5_checkpoint(
     if mismatch:
         raise CheckpointError(f"ViT-5 tensor shape mismatch: {mismatch}")
 
-    backbone.vit5.load_state_dict(weights, strict=True)
+    layout_mismatch = tuple(
+        sorted(key for key in weights if weights[key].layout != target[key].layout)
+    )
+    if layout_mismatch:
+        raise CheckpointError(f"ViT-5 tensor layout mismatch: {layout_mismatch}")
+
+    # Prove all copies work on an isolated encoder before changing the live one.
+    candidate = copy.deepcopy(backbone.vit5)
+    try:
+        candidate.load_state_dict(weights, strict=True)
+    except (RuntimeError, TypeError) as exc:
+        raise CheckpointError(f"Cannot apply ViT-5 weights: {exc}") from exc
+    original = {key: value.detach().clone() for key, value in target.items()}
+    try:
+        backbone.vit5.load_state_dict(candidate.state_dict(), strict=True)
+    except (RuntimeError, TypeError) as exc:
+        backbone.vit5.load_state_dict(original, strict=True)
+        raise CheckpointError(f"Cannot commit ViT-5 weights: {exc}") from exc
     return LoadReport(
         source=source_name,
         prefix=prefix,

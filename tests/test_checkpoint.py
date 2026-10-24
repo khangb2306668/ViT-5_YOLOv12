@@ -104,6 +104,24 @@ def test_loader_reports_corrupt_checkpoint_as_validation_error(tmp_path: Path) -
         load_vit5_checkpoint(small_backbone(), path)
 
 
+@pytest.mark.filterwarnings("ignore:Validating sparse tensor invariants")
+def test_loader_rejects_sparse_tensor_without_changing_any_weight(tmp_path: Path) -> None:
+    backbone = small_backbone()
+    original = backbone.vit5.cls_token.detach().clone()
+    state = checkpoint_state(backbone)
+    state["cls_token"].fill_(0.375)
+    state["norm.weight"] = torch.sparse_coo_tensor(
+        torch.tensor([[0]]), torch.tensor([1.0]), size=(384,), check_invariants=True
+    )
+    path = tmp_path / "sparse.pth"
+    torch.save({"model": state}, path)
+
+    with pytest.raises(CheckpointError, match="layout"):
+        load_vit5_checkpoint(backbone, path)
+
+    assert torch.equal(backbone.vit5.cls_token, original)
+
+
 def test_official_small_checkpoint_loads_when_available() -> None:
     path = Path(__file__).resolve().parents[1] / "checkpoints" / "vit5_small_patch16_224.pth"
     if not path.exists():
