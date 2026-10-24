@@ -52,3 +52,18 @@ The dataset folders under `dataset/sample_v1_maivang` are placeholders. Add
 ```powershell
 .\.venv\Scripts\python.exe scripts\check_dataset.py dataset\sample_v1_maivang\data.yaml
 ```
+
+For training, copy `configs/experiment.example.yaml` to the ignored
+`configs/experiment.yaml`, edit its paths and options, then run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\train.py --config configs\experiment.yaml
+```
+
+This runs seeds 0, 1, and 2 with the pinned Ultralytics trainer and the
+official ViT-5 initialization. Each run saves its effective arguments,
+dataset/checkpoint hashes, and source revision in `metadata.json` before
+training starts. To resume a specific run, set `train.resume` in the local
+experiment YAML to its `last.pt` path and pass `--seed` for that run. Resume
+checks the checkpoint's effective seed, image size, rectangular mode, and
+multiscale setting before training.
