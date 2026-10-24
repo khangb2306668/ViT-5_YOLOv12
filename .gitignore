@@ -1,0 +1,9 @@
+docs/
+dataset/
+.uv-cache/
+.pytest_cache/
+__pycache__/
+*.pyc
+configs/experiment.yaml
+build/
+*.egg-info/

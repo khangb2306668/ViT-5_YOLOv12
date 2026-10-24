@@ -1,0 +1,22 @@
+# Copy to experiment.yaml, then edit local paths and training options.
+# Relative paths are resolved from this configs/ directory.
+data: ../dataset/sample_v1_maivang/data.yaml
+model_yaml: yolo12-vit5n.yaml
+vit5_checkpoint: ../checkpoints/vit5_small.pth
+output_dir: ../runs/vit5_yolo12
+seeds: [0, 1, 2]
+imgsz: 640
+
+# Fill from the Colab environment used for the YOLO12n baseline before
+# claiming a version-matched comparison.
+baseline_ultralytics_version: null
+
+train:
+  epochs: 100
+  batch: 16
+  optimizer: auto
+  multi_scale: false
+  rect: false
+
+validation:
+  rect: false
