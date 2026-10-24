@@ -71,6 +71,19 @@ def test_config_resolves_paths_and_keeps_training_options(tmp_path: Path) -> Non
     assert config.train["epochs"] == 100
 
 
+def test_resume_checkpoint_path_is_relative_to_experiment_yaml(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "last.pt"
+    checkpoint.write_bytes(b"fixture")
+    config = load_experiment_config(
+        write_config(
+            tmp_path,
+            train={"epochs": 100, "batch": 16, "multi_scale": False,
+                   "rect": False, "resume": "last.pt"},
+        )
+    )
+    assert config.train["resume"] == str(checkpoint)
+
+
 @pytest.mark.parametrize(
     ("changes", "message"),
     [

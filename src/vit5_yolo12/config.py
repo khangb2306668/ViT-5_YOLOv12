@@ -151,6 +151,9 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
 
     data_path = _input_file(raw.get("data"), "data", base)
     check_dataset(data_path)
+    train_options = dict(train)
+    if isinstance(train_options.get("resume"), str):
+        train_options["resume"] = str(_input_file(train_options["resume"], "train.resume", base))
 
     return ExperimentConfig(
         data=data_path,
@@ -159,7 +162,7 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
         output_dir=_output_path(raw.get("output_dir"), "output_dir", base),
         seeds=tuple(seeds),
         imgsz=640,
-        train=dict(train),
+        train=train_options,
         validation=dict(validation),
         baseline_ultralytics_version=version,
     )

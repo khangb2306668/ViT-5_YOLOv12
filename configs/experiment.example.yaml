@@ -13,7 +13,8 @@ baseline_ultralytics_version: "8.4.185"
 
 train:
   epochs: 100
-  batch: 16
+  # Start the L4 pilot at 1; increase only after measuring peak GPU memory.
+  batch: 1
   optimizer: auto
   multi_scale: false
   rect: false

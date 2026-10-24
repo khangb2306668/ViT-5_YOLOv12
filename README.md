@@ -63,7 +63,9 @@ For training, copy `configs/experiment.example.yaml` to the ignored
 This runs seeds 0, 1, and 2 with the pinned Ultralytics trainer and the
 official ViT-5 initialization. Each run saves its effective arguments,
 dataset/checkpoint hashes, and source revision in `metadata.json` before
-training starts. To resume a specific run, set `train.resume` in the local
+training starts. The example starts at batch 1 for the GPU pilot; measure
+peak memory before increasing it, and use the same final recipe for the
+YOLO12n control run. To resume a specific run, set `train.resume` in the local
 experiment YAML to its `last.pt` path and pass `--seed` for that run. Resume
 checks the checkpoint's effective seed, image size, rectangular mode, and
 multiscale setting before training.
