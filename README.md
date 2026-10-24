@@ -24,6 +24,13 @@ The training extra currently pins Ultralytics 8.4.185 based on the supplied
 package-download log. Confirm the version installed in the YOLO12n baseline
 Colab run before treating this as a version-matched comparison.
 
+The ViT-5-Small checkpoint comes from the authors' [official Hugging Face
+repository](https://huggingface.co/FengWang3211/ViT-5/blob/main/vit5_small_patch16_224.pth).
+Place it at `checkpoints/vit5_small_patch16_224.pth`. The downloaded file used
+for Task 3 has SHA-256
+`b71918ba918ac5c59475cb7088d528f87045a0731a2bba8b24f49d92c997a890`.
+The `checkpoints` folder is ignored by Git.
+
 The dataset folders under `dataset/sample_v1_maivang` are placeholders. Add
 `images` and `labels` under each of `train`, `valid`, and `test`, then run:
 

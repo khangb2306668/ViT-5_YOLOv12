@@ -2,7 +2,7 @@
 # Relative paths are resolved from this configs/ directory.
 data: ../dataset/sample_v1_maivang/data.yaml
 model_yaml: yolo12-vit5n.yaml
-vit5_checkpoint: ../checkpoints/vit5_small.pth
+vit5_checkpoint: ../checkpoints/vit5_small_patch16_224.pth
 output_dir: ../runs/vit5_yolo12
 seeds: [0, 1, 2]
 imgsz: 640

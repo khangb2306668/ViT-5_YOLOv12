@@ -94,6 +94,7 @@ def test_template_exposes_local_dataset_path() -> None:
     raw = yaml.safe_load(template.read_text(encoding="utf-8"))
 
     assert raw["data"] == "../dataset/sample_v1_maivang/data.yaml"
+    assert raw["vit5_checkpoint"] == "../checkpoints/vit5_small_patch16_224.pth"
     assert raw["seeds"] == [0, 1, 2]
     assert raw["baseline_ultralytics_version"] == "8.4.185"
 

@@ -8,3 +8,5 @@ __pycache__/
 configs/experiment.yaml
 build/
 *.egg-info/
+checkpoints/
+.ultralytics/
