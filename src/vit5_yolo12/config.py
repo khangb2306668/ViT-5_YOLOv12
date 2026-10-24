@@ -93,13 +93,20 @@ def check_dataset(data_yaml: Path) -> dict[str, Any]:
         image_dir = image_dir.resolve()
         if not image_dir.is_dir():
             raise ConfigError(f"Missing {key} images directory: {image_dir}")
-        if not any(p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES for p in image_dir.iterdir()):
-            raise ConfigError(f"No images found in {key} images directory: {image_dir}")
         if image_dir.name != "images":
             raise ConfigError(f"{key} must point to a directory named images: {image_dir}")
         labels_dir = image_dir.parent / "labels"
         if not labels_dir.is_dir():
             raise ConfigError(f"Missing {key} labels directory: {labels_dir}")
+        try:
+            images = [p for p in image_dir.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES]
+            if not images:
+                raise ConfigError(f"No images found in {key} images directory: {image_dir}")
+            for image in images:
+                if not (labels_dir / f"{image.stem}.txt").is_file():
+                    raise ConfigError(f"Missing {key} label for {image.name}: {labels_dir / (image.stem + '.txt')}")
+        except OSError as exc:
+            raise ConfigError(f"Cannot inspect {key} split {image_dir}: {exc}") from exc
         splits[key] = image_dir
     return {"nc": 6, "names": list(CLASS_NAMES), "splits": splits}
 
@@ -122,6 +129,12 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
         raise ConfigError("train must be a mapping of Ultralytics training options")
     if not isinstance(validation, dict):
         raise ConfigError("validation must be a mapping")
+    reserved = {"data", "model", "imgsz", "seed", "project", "name", "save_dir"}
+    for section_name, options in (("train", train), ("validation", validation)):
+        conflict = reserved.intersection(options)
+        if conflict:
+            key = sorted(conflict)[0]
+            raise ConfigError(f"{section_name}.{key} must be set by the training entry point")
     if train.get("multi_scale") is not False:
         raise ConfigError("train.multi_scale must be false for fixed 640 inputs")
     if train.get("rect") is not False:
@@ -136,8 +149,11 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
     if version is not None and (not isinstance(version, str) or not version.strip()):
         raise ConfigError("baseline_ultralytics_version must be a version string or null")
 
+    data_path = _input_file(raw.get("data"), "data", base)
+    check_dataset(data_path)
+
     return ExperimentConfig(
-        data=_input_file(raw.get("data"), "data", base),
+        data=data_path,
         model_yaml=_input_file(raw.get("model_yaml"), "model_yaml", base),
         vit5_checkpoint=_input_file(raw.get("vit5_checkpoint"), "vit5_checkpoint", base),
         output_dir=_output_path(raw.get("output_dir"), "output_dir", base),
@@ -161,6 +177,7 @@ def build_run_metadata(
         raise ConfigError("Ultralytics version and ViT-5 revision are required")
     return {
         "dataset_yaml_sha256": hashlib.sha256(config.data.read_bytes()).hexdigest(),
+        "vit5_checkpoint_sha256": _sha256_file(config.vit5_checkpoint),
         "ultralytics_version": ultralytics_version,
         "baseline_ultralytics_version": config.baseline_ultralytics_version,
         "vit5_revision": vit5_revision,
@@ -176,6 +193,14 @@ def build_run_metadata(
             "validation": dict(config.validation),
         },
     }
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def write_run_metadata(run_dir: Path, metadata: dict[str, Any]) -> Path:

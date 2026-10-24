@@ -97,3 +97,11 @@ def test_dataset_reports_missing_labels_folder(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="Missing val labels directory"):
         check_dataset(data_yaml)
+
+
+def test_dataset_rejects_image_without_matching_label(tmp_path: Path) -> None:
+    data_yaml = make_dataset(tmp_path / "dataset")
+    (data_yaml.parent / "test" / "labels" / "sample.txt").unlink()
+
+    with pytest.raises(ConfigError, match="sample.jpg"):
+        check_dataset(data_yaml)

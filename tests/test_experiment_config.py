@@ -15,7 +15,33 @@ def write_config(tmp_path: Path, **changes) -> Path:
     data = tmp_path / "data.yaml"
     model = tmp_path / "model.yaml"
     checkpoint = tmp_path / "vit5.pth"
-    for path in (data, model, checkpoint):
+    for split in ("train", "valid", "test"):
+        image_dir = tmp_path / split / "images"
+        label_dir = tmp_path / split / "labels"
+        image_dir.mkdir(parents=True)
+        label_dir.mkdir(parents=True)
+        (image_dir / "sample.jpg").write_bytes(b"image placeholder")
+        (label_dir / "sample.txt").write_text("0 0.5 0.5 0.4 0.4\n", encoding="utf-8")
+    data.write_text(
+        yaml.safe_dump(
+            {
+                "nc": 6,
+                "names": [
+                    "alternaria_leaf_spot",
+                    "colletotrichum_anthracnose",
+                    "glomerella_anthracnose",
+                    "healthy",
+                    "pestalotia_leaf_spot",
+                    "pink_disease",
+                ],
+                "train": "train/images",
+                "val": "valid/images",
+                "test": "test/images",
+            }
+        ),
+        encoding="utf-8",
+    )
+    for path in (model, checkpoint):
         path.write_bytes(b"placeholder")
     raw = {
         "data": "data.yaml",
@@ -82,11 +108,14 @@ def test_run_metadata_records_resolved_inputs_and_dataset_hash(tmp_path: Path) -
     )
 
     assert metadata["dataset_yaml_sha256"] == (
-        "4097889236a2af26c293033feb964c4cf118c0224e0d063fec0a89e9d0569ef2"
+        "adc0221ac71c8f3a90d1be5a63e8195cb2cca99b32f139014101bde030bd9f64"
     )
     assert metadata["resolved_config"]["data"] == str(tmp_path / "data.yaml")
     assert metadata["ultralytics_version"] == "8.3.0"
     assert metadata["vit5_revision"] == "abc123"
+    assert metadata["vit5_checkpoint_sha256"] == (
+        "4097889236a2af26c293033feb964c4cf118c0224e0d063fec0a89e9d0569ef2"
+    )
     assert metadata["effective_train_args"] == {"imgsz": 640, "batch": 16}
 
 
@@ -105,3 +134,34 @@ def test_run_metadata_can_be_saved_as_json(tmp_path: Path) -> None:
 
     assert saved == tmp_path / "run" / "metadata.json"
     assert json.loads(saved.read_text(encoding="utf-8")) == metadata
+
+
+@pytest.mark.parametrize(
+    ("section", "key", "value"),
+    [
+        ("train", "imgsz", 512),
+        ("train", "seed", 7),
+        ("train", "data", "other.yaml"),
+        ("validation", "imgsz", 512),
+        ("validation", "data", "other.yaml"),
+    ],
+)
+def test_config_rejects_nested_core_setting_override(
+    tmp_path: Path, section: str, key: str, value: object
+) -> None:
+    options = {"epochs": 100, "batch": 16, "multi_scale": False, "rect": False}
+    validation = {"rect": False}
+    target = options if section == "train" else validation
+    target[key] = value
+
+    with pytest.raises(ConfigError, match=key):
+        load_experiment_config(write_config(tmp_path, train=options, validation=validation))
+
+
+def test_config_rejects_invalid_dataset_contents(tmp_path: Path) -> None:
+    config_path = write_config(tmp_path)
+    data_yaml = tmp_path / "data.yaml"
+    data_yaml.write_text(data_yaml.read_text(encoding="utf-8").replace("nc: 6", "nc: 5"), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="nc=6"):
+        load_experiment_config(config_path)
