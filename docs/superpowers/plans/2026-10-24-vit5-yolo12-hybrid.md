@@ -21,6 +21,7 @@
 - The current `.gitignore` ignores `docs/`; force-add this spec and plan in the first documentation commit so the chosen design travels with the implementation.
 - Keep architecture, dataset, and experiment settings in separate YAML files. Save the resolved experiment configuration with every run.
 - Treat `dataset/sample_v1_maivang/data.yaml` as the local layout example. Its `train`, `val`, and `test` entries resolve to `train/images`, `valid/images`, and `test/images` beneath the dataset root. The split folders are currently empty, so data-contract checks must report missing `images`/`labels` clearly until the user adds the real dataset.
+- Pin the Ultralytics training extra to `8.4.185`, the version named in the supplied pip metadata-download log. Confirm the actual installed version in the baseline Colab environment before claiming a version-matched comparison.
 
 ## File Map
 

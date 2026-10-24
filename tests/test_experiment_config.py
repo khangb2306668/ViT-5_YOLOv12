@@ -95,6 +95,7 @@ def test_template_exposes_local_dataset_path() -> None:
 
     assert raw["data"] == "../dataset/sample_v1_maivang/data.yaml"
     assert raw["seeds"] == [0, 1, 2]
+    assert raw["baseline_ultralytics_version"] == "8.4.185"
 
 
 def test_run_metadata_records_resolved_inputs_and_dataset_hash(tmp_path: Path) -> None:

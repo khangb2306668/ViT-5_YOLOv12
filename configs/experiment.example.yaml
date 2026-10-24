@@ -7,9 +7,9 @@ output_dir: ../runs/vit5_yolo12
 seeds: [0, 1, 2]
 imgsz: 640
 
-# Fill from the Colab environment used for the YOLO12n baseline before
-# claiming a version-matched comparison.
-baseline_ultralytics_version: null
+# Baseline package version inferred from a pip metadata-download log.
+# Confirm with `python -m pip show ultralytics` in the baseline Colab run.
+baseline_ultralytics_version: "8.4.185"
 
 train:
   epochs: 100
