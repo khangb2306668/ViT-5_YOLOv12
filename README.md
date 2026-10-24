@@ -31,6 +31,21 @@ for Task 3 has SHA-256
 `b71918ba918ac5c59475cb7088d528f87045a0731a2bba8b24f49d92c997a890`.
 The `checkpoints` folder is ignored by Git.
 
+To construct the hybrid detector, register its backbone before the Ultralytics
+YAML parser runs:
+
+```python
+from ultralytics import YOLO
+from vit5_yolo12.ultralytics_integration import register_ultralytics_modules
+
+register_ultralytics_modules()
+model = YOLO("configs/yolo12-vit5n.yaml", task="detect")
+```
+
+This constructs the official YOLO12n neck and Detect modules with a newly
+initialized six-class head. Loading the ViT-5 checkpoint into trainer-created
+models is handled in the training step.
+
 The dataset folders under `dataset/sample_v1_maivang` are placeholders. Add
 `images` and `labels` under each of `train`, `valid`, and `test`, then run:
 
