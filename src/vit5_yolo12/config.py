@@ -37,6 +37,7 @@ class ExperimentConfig:
     train: dict[str, Any]
     validation: dict[str, Any]
     baseline_ultralytics_version: str | None
+    yolo12_checkpoint: Path | None = None
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -135,6 +136,9 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
         if conflict:
             key = sorted(conflict)[0]
             raise ConfigError(f"{section_name}.{key} must be set by the training entry point")
+        if (raw.get("yolo12_checkpoint") is not None
+                and "pretrained" in options and options["pretrained"] is not True):
+            raise ConfigError(f"{section_name}.pretrained conflicts with yolo12_checkpoint; omit it or use true")
     if train.get("multi_scale") is not False:
         raise ConfigError("train.multi_scale must be false for fixed 640 inputs")
     if train.get("rect") is not False:
@@ -165,6 +169,10 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
         train=train_options,
         validation=dict(validation),
         baseline_ultralytics_version=version,
+        yolo12_checkpoint=(
+            _input_file(raw["yolo12_checkpoint"], "yolo12_checkpoint", base)
+            if raw.get("yolo12_checkpoint") is not None else None
+        ),
     )
 
 
@@ -174,6 +182,7 @@ def build_run_metadata(
     ultralytics_version: str,
     vit5_revision: str,
     effective_train_args: dict[str, Any],
+    initialization_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Capture the exact inputs that a later training run must preserve."""
     if not ultralytics_version.strip() or not vit5_revision.strip():
@@ -181,6 +190,8 @@ def build_run_metadata(
     return {
         "dataset_yaml_sha256": hashlib.sha256(config.data.read_bytes()).hexdigest(),
         "vit5_checkpoint_sha256": _sha256_file(config.vit5_checkpoint),
+        "yolo12_checkpoint_sha256": _sha256_file(config.yolo12_checkpoint) if config.yolo12_checkpoint else None,
+        "initialization": initialization_report,
         "ultralytics_version": ultralytics_version,
         "baseline_ultralytics_version": config.baseline_ultralytics_version,
         "vit5_revision": vit5_revision,
@@ -189,6 +200,7 @@ def build_run_metadata(
             "data": str(config.data),
             "model_yaml": str(config.model_yaml),
             "vit5_checkpoint": str(config.vit5_checkpoint),
+            "yolo12_checkpoint": str(config.yolo12_checkpoint) if config.yolo12_checkpoint else None,
             "output_dir": str(config.output_dir),
             "seeds": list(config.seeds),
             "imgsz": config.imgsz,

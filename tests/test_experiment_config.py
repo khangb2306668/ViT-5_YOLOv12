@@ -69,6 +69,43 @@ def test_config_resolves_paths_and_keeps_training_options(tmp_path: Path) -> Non
     assert config.seeds == (0, 1, 2)
     assert config.imgsz == 640
     assert config.train["epochs"] == 100
+    assert config.yolo12_checkpoint is None
+
+
+def test_optional_yolo12_checkpoint_resolves_and_records_provenance(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "yolo12n.pt"
+    checkpoint.write_bytes(b"official checkpoint fixture")
+    config = load_experiment_config(write_config(tmp_path, yolo12_checkpoint="yolo12n.pt"))
+    assert config.yolo12_checkpoint == checkpoint
+    report = {"mode": "vit5_yolo12_b", "yolo12": {"groups": []}}
+    metadata = build_run_metadata(
+        config, ultralytics_version="8.4.185", vit5_revision="abc",
+        effective_train_args={"optimizer": "MuSGD"}, initialization_report=report,
+    )
+    import hashlib
+    assert metadata["yolo12_checkpoint_sha256"] == hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    assert metadata["resolved_config"]["yolo12_checkpoint"] == str(checkpoint)
+    assert metadata["initialization"] == report
+
+
+@pytest.mark.parametrize("bad", ["missing.pt", False, ""])
+def test_invalid_optional_yolo12_checkpoint_is_rejected(tmp_path: Path, bad) -> None:
+    with pytest.raises(ConfigError, match="yolo12_checkpoint"):
+        load_experiment_config(write_config(tmp_path, yolo12_checkpoint=bad))
+
+
+@pytest.mark.parametrize("section", ["train", "validation"])
+@pytest.mark.parametrize("pretrained", [False, "another.pt"])
+def test_initialization_b_rejects_conflicting_pretrained_override(tmp_path, section, pretrained):
+    checkpoint = tmp_path / "yolo12n.pt"
+    checkpoint.write_bytes(b"fixture")
+    options = {"epochs": 100, "batch": 64, "multi_scale": False, "rect": False}
+    validation = {"rect": False}
+    (options if section == "train" else validation)["pretrained"] = pretrained
+    with pytest.raises(ConfigError, match="pretrained"):
+        load_experiment_config(write_config(
+            tmp_path, yolo12_checkpoint="yolo12n.pt", train=options, validation=validation,
+        ))
 
 
 def test_resume_checkpoint_path_is_relative_to_experiment_yaml(tmp_path: Path) -> None:

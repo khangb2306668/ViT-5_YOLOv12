@@ -69,3 +69,59 @@ YOLO12n control run. To resume a specific run, set `train.resume` in the local
 experiment YAML to its `last.pt` path and pass `--seed` for that run. Resume
 checks the checkpoint's effective seed, image size, rectangular mode, and
 multiscale setting before training.
+
+## Initialization B: ViT-5 plus pretrained YOLO12n detection components
+
+Prepare the official **unfused, 80-class COCO** YOLO12n checkpoint once, before
+training. With the training extra installed, this command downloads the official
+Ultralytics asset to the ignored checkpoints directory (it also works on Colab):
+
+```bash
+python -c "from ultralytics.utils.downloads import attempt_download_asset; attempt_download_asset('checkpoints/yolo12n.pt')"
+```
+
+The checkpoint verified during implementation has SHA-256
+`419ff3dca37d69bacc93a50fa0c186a1c6f9fe62fae0f108b0872829689e9ca6`.
+The loader checks graph compatibility; metadata records the hash of the actual
+file used. It never downloads a missing source during trainer reconstruction.
+
+Copy `configs/experiment.pretrained-b.example.yaml` to
+`configs/experiment.pretrained-b.yaml`, edit `data` to the same dataset used by
+the old hybrid run, and check both checkpoint paths. Start with seed 1:
+
+```bash
+python scripts/train.py --config configs/experiment.pretrained-b.yaml --seed 1
+```
+
+The example reproduces the previous A100 recipe: batch 64, MuSGD at lr0 0.01
+with momentum 0.9 and warmup_bias_lr 0.0, at most 100 epochs and patience 15.
+Those explicit values match what `optimizer=auto` selected in that run.
+Use a GPU that fits this batch for the direct comparison. The new output
+directory keeps the previous run available.
+
+`yolo12_checkpoint` enables initialization B: an explicit layer mapping copies
+P3, the YOLO12n neck, and Detect's three box-regression branches. This transfers
+336 state tensors (including BatchNorm buffers) and 1,205,856 parameters.
+ViT-5 keeps the author's initialization; the P4/P5 adapters and the entire
+six-class classifier initialize anew. DFL remains the fixed projector.
+All transferred learned parameters remain trainable. Missing keys, wrong
+shapes/scales/classes, or fused sources fail before changing destination state.
+Legacy official positional-convolution biases in the unused source backbone
+stages 6 and 8 are explicitly skipped and reported.
+
+The run log prints `Initialization B: 336 tensors, 1,205,856 parameters ...`.
+After setup, `metadata.json` includes `initialization.mode: vit5_yolo12_b`,
+per-group source/target mappings, intentionally skipped keys, both checkpoint
+hashes and actual optimizer groups. An early metadata record is still written
+if setup is interrupted, but its initialization mode remains `pending` until
+the model has been initialized.
+
+Omit `yolo12_checkpoint` or set it to `null` to retain the original ViT-only
+initialization. Do not pass the YOLO12n file through `train.pretrained`: its
+layer indices differ from the hybrid's. When initialization B is configured,
+`train.pretrained` and `validation.pretrained` must be omitted or `true`.
+Full hybrid resume/fine-tune weights take priority and skip the base YOLO12n
+transfer; metadata records `hybrid_weights` in that case. A completed run whose
+optimizer has been stripped can only start a new fine-tuning run, not restore
+the old optimizer state. Initialization B itself starts from the hybrid YAML
+and the two official pretrained files, not a previous hybrid `best.pt`.

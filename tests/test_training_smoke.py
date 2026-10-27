@@ -172,3 +172,123 @@ def test_metadata_exists_when_training_is_interrupted(tmp_path: Path, monkeypatc
     with pytest.raises(RuntimeError, match="interrupted"):
         training.train_one_seed(config, 0)
     assert (tmp_path / "runs" / "seed_0" / "metadata.json").is_file()
+
+
+def test_initialization_b_rebuild_and_full_hybrid_priority(tmp_path, monkeypatch):
+    import copy
+    import vit5_yolo12.ultralytics_integration as integration
+    from vit5_yolo12.checkpoint import LoadReport
+
+    register_ultralytics_modules()
+    source = YOLO("yolo12n.yaml").model
+    source.model[0].conv.weight.data.fill_(0.25)
+    source.model[11].cv1.conv.weight.data.fill_(0.375)
+    source.model[21].cv2[0][-1].weight.data.fill_(0.5)
+    path = tmp_path / "yolo12n.pt"
+    torch.save({"model": source}, path)
+
+    def load_vit(backbone, path):
+        backbone.vit5.patch_embed.proj.weight.data.fill_(0.125)
+        return LoadReport("model", "", ("patch_embed.proj.weight",), (), ())
+
+    monkeypatch.setattr(integration, "load_vit5_checkpoint", load_vit)
+    trainer = integration.HybridDetectionTrainer(
+        vit5_checkpoint=tmp_path / "vit.pth", yolo12_checkpoint=path,
+        overrides={"model": str(MODEL_YAML), "data": str(make_dataset(tmp_path)), "workers": 0,
+                   "batch": 1, "project": str(tmp_path / "runs")},
+    )
+    for _ in range(2):
+        model = trainer.get_model(cfg=str(MODEL_YAML), verbose=False)
+        assert torch.all(model.model[0].vit5.patch_embed.proj.weight == 0.125)
+        assert torch.all(model.model[0].p3[0].conv.weight == 0.25)
+        assert torch.all(model.model[6].cv1.conv.weight == 0.375)
+        assert torch.all(model.model[16].cv2[0][-1].weight == 0.5)
+        assert trainer.initialization_report["mode"] == "vit5_yolo12_b"
+    weights = copy.deepcopy(model)
+    weights.model[0].p3[0].conv.weight.data.fill_(0.625)
+    weights.model[0].vit5.patch_embed.proj.weight.data.fill_(0.75)
+    weights.model[16].cv2[0][-1].weight.data.fill_(0.875)
+    # A full hybrid checkpoint must not even attempt to read this base source again.
+    path.write_bytes(b"deliberately unavailable base initialization")
+    model = trainer.get_model(cfg=str(MODEL_YAML), weights=weights, verbose=False)
+    assert torch.all(model.model[0].p3[0].conv.weight == 0.625)
+    assert torch.all(model.model[0].vit5.patch_embed.proj.weight == 0.75)
+    assert torch.all(model.model[16].cv2[0][-1].weight == 0.875)
+    assert trainer.initialization_report["mode"] == "hybrid_weights"
+    assert trainer.initialization_report["yolo12_applied"] is False
+
+
+def test_metadata_refreshes_after_optimizer_and_initialization_setup(tmp_path, monkeypatch):
+    import json
+    import vit5_yolo12.train as training
+    from vit5_yolo12.config import ExperimentConfig
+
+    checkpoint, yolo = tmp_path / "vit.pth", tmp_path / "yolo12n.pt"
+    checkpoint.write_bytes(b"vit")
+    yolo.write_bytes(b"yolo")
+    config = ExperimentConfig(
+        data=make_dataset(tmp_path), model_yaml=MODEL_YAML, vit5_checkpoint=checkpoint,
+        output_dir=tmp_path / "runs", seeds=(0, 1, 2), imgsz=640,
+        train={"epochs": 100, "batch": 64, "multi_scale": False, "rect": False},
+        validation={"rect": False}, baseline_ultralytics_version="8.4.185", yolo12_checkpoint=yolo,
+    )
+    run_dir = config.output_dir / "seed_0"
+
+    class SetupOnlyYOLO:
+        def __init__(self, *args, **kwargs):
+            self.callbacks = {}
+            self.trainer = SimpleNamespace(
+                args=SimpleNamespace(imgsz=640, rect=False, multi_scale=False, seed=0, optimizer="auto"),
+                save_dir=run_dir, initialization_report={"mode": "pending"},
+            )
+
+        def add_callback(self, name, callback):
+            self.callbacks[name] = callback
+
+        def train(self, trainer, **options):
+            assert trainer.keywords["yolo12_checkpoint"] == yolo
+            self.callbacks["on_pretrain_routine_start"](self.trainer)
+            self.trainer.args.optimizer = "MuSGD"
+            self.trainer.initialization_report = {"mode": "vit5_yolo12_b", "yolo12_applied": True}
+            self.callbacks["on_pretrain_routine_end"](self.trainer)
+            raise RuntimeError("stopped after setup")
+
+    monkeypatch.setattr(training, "YOLO", SetupOnlyYOLO)
+    with pytest.raises(RuntimeError, match="stopped after setup"):
+        training.train_one_seed(config, 0)
+    metadata = json.loads((run_dir / "metadata.json").read_text())
+    assert metadata["effective_train_args"]["optimizer"] == "MuSGD"
+    assert metadata["initialization"]["mode"] == "vit5_yolo12_b"
+
+
+def test_official_dual_initialization_has_finite_loss_and_gradients_at_640(tmp_path):
+    from vit5_yolo12.ultralytics_integration import HybridDetectionTrainer
+
+    root = MODEL_YAML.parents[1]
+    vit, yolo = root / "checkpoints/vit5_small_patch16_224.pth", root / "checkpoints/yolo12n.pt"
+    if not vit.is_file() or not yolo.is_file():
+        pytest.skip("Both official pretrained checkpoints are required")
+    trainer = HybridDetectionTrainer(
+        vit5_checkpoint=vit, yolo12_checkpoint=yolo,
+        overrides={"model": str(MODEL_YAML), "data": str(make_dataset(tmp_path)),
+                   "batch": 1, "workers": 0, "imgsz": 640, "project": str(tmp_path / "runs")},
+    )
+    model = trainer.get_model(cfg=str(MODEL_YAML), verbose=False).train()
+    model.args = trainer.args
+    batch = {
+        "img": torch.rand(1, 3, 640, 640), "batch_idx": torch.tensor([0, 0]),
+        "cls": torch.tensor([[0.0], [1.0]]),
+        "bboxes": torch.tensor([[0.5, 0.5, 0.7, 0.8], [0.5, 0.5, 0.25, 0.3]]),
+    }
+    loss, _ = model(batch)
+    assert torch.isfinite(loss).all()
+    loss.sum().backward()
+    groups = {
+        "vit": model.model[0].vit5, "p3": model.model[0].p3,
+        "p4": model.model[0].p4, "p5": model.model[0].p5,
+        "neck": model.model[4:16], "box": model.model[16].cv2, "cls": model.model[16].cv3,
+    }
+    for name, module in groups.items():
+        gradients = [parameter.grad for parameter in module.parameters() if parameter.grad is not None]
+        assert gradients and all(torch.isfinite(gradient).all() for gradient in gradients), name
+        assert sum(gradient.abs().sum() for gradient in gradients) > 0, name

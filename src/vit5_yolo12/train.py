@@ -71,10 +71,20 @@ def train_one_seed(config: ExperimentConfig, seed: int) -> Path:
             ultralytics_version=ultralytics.__version__,
             vit5_revision=VIT5_REVISION,
             effective_train_args=effective_args,
+            initialization_report=getattr(trainer, "initialization_report", {"mode": "pending"}),
         )
+        optimizer = getattr(trainer, "optimizer", None)
+        if optimizer is not None:
+            keys = {"lr", "initial_lr", "momentum", "betas", "weight_decay", "param_group", "use_muon"}
+            metadata["optimizer"] = {
+                "name": type(optimizer).__name__,
+                "groups": [{key: value for key, value in group.items() if key in keys}
+                           for group in optimizer.param_groups],
+            }
         write_run_metadata(trainer.save_dir, metadata)
 
     model.add_callback("on_pretrain_routine_start", record_run)
+    model.add_callback("on_pretrain_routine_end", record_run)
     options = {
         **config.train,
         **config.validation,
@@ -84,7 +94,10 @@ def train_one_seed(config: ExperimentConfig, seed: int) -> Path:
         "project": str(config.output_dir),
         "name": f"seed_{seed}",
     }
-    model.train(trainer=partial(HybridDetectionTrainer, vit5_checkpoint=config.vit5_checkpoint), **options)
+    model.train(trainer=partial(
+        HybridDetectionTrainer, vit5_checkpoint=config.vit5_checkpoint,
+        yolo12_checkpoint=config.yolo12_checkpoint,
+    ), **options)
     trainer = model.trainer
     checkpoint = trainer.best if trainer.best.exists() else trainer.last
     if not checkpoint.exists():

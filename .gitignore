@@ -1,4 +1,4 @@
-docs/
+!docs/xay-dung-model-lai-vit5-yolo12.md
 dataset/
 .uv-cache/
 .venv/
@@ -6,7 +6,11 @@ dataset/
 __pycache__/
 *.pyc
 configs/experiment.yaml
+configs/experiment.pretrained-b.yaml
+.superpowers/
 build/
 *.egg-info/
 checkpoints/
 .ultralytics/
+docs/xay-dung-model-lai-vit5-yolo12.md
+docs/
